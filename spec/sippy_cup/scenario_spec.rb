@@ -168,7 +168,7 @@ describe SippyCup::Scenario do
       it "expects a 401 response" do
         pending "Need to check for initial request, then 401, then retry with authentication"
         subject.register 'frank', 'abc123'
-        expect(subject.to_xml).to match(%r{<recv response="401" auth="true" optional="false"/>})
+        subject.to_xml.to match(%r{<recv response="401" auth="true" optional="false"/>})
         fail "Not yet implemented"
       end
 
