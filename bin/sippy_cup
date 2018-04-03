@@ -8,6 +8,7 @@ def usage
   puts
   puts "--compile, -c  Compile the given scenario manifest to XML and PCAP"
   puts "--run, -r      Run the scenario"
+  puts "--sudo, -s     Run the scenario with sudo user"
   puts "--help, -h     Print this usage information"
   puts "--version, -V  Print SippyCup version"
 end
@@ -15,18 +16,22 @@ end
 opts = GetoptLong.new(
   ['--compile', '-c', GetoptLong::NO_ARGUMENT],
   ['--run', '-r', GetoptLong::NO_ARGUMENT],
+  ['--sudo', '-s', GetoptLong::NO_ARGUMENT],
   ['--help', '-h', GetoptLong::NO_ARGUMENT],
   ['--version', '-V', GetoptLong::NO_ARGUMENT]
 )
 
 compile = false
 run = false
+sudo = false
 opts.each do |opt, arg|
   case opt
   when '--compile'
     compile = true
   when '--run'
     run = true
+  when '--sudo'
+    sudo = true
   when '--help'
     usage
     exit 0
@@ -71,6 +76,6 @@ else
 end
 
 if run
-  runner = SippyCup::Runner.new scenario
+  runner = SippyCup::Runner.new scenario, sudo: sudo
   runner.run
 end

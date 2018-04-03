@@ -141,10 +141,12 @@ Each command below can take [SIPp attributes](http://sipp.sourceforge.net/doc/re
 
 * `sleep <seconds>` Wait a specified number of seconds
 * `invite` Send a SIP INVITE to the specified target
+* `invite_with_digest_auth` "<[authentication username=username password=password]>" Send a SIP INVITE with authentication. Could be provided value from variable file. Example: "[field1]"
 * `receive_invite` Wait for an INVITE to be received
 * `register <username> [password]` Register the specified user to the target with an optional password
 * `send_trying` Send a `100 Trying` provisional response
 * `receive_trying` Expect to receive a `100 Trying` response from the target
+* `receive_unauthorized` Expect to receive a `401 Unauthorized` response from the target
 * `send_ringing` Send a `180 Ringing` provisional response
 * `receive_ringing` Expect to receive a `180 Ringing` response from the target
 * `receive_progress` Expect to receive a `183 Progress` response from the target
@@ -201,8 +203,14 @@ Each parameter has an impact on the test, and may either be changed once the XML
   <dt>from_user</dt>
   <dd>SIP user from which traffic should appear. Default: sipp</dd>
 
+  <dt>inf_from_user</dt>
+  <dd>SIP user from which traffic should appear. Takes value provided in variables file. Example: "[field1]". Overrides `from_user` value</dd>
+
   <dt>to</dt>
   <dd>SIP user / address to send requests to. Defaults to SIPp's default: `s@[destination]` (as in `s@127.0.0.1`). Can specify either a user (`foouser`) or a full address (`foouser@there.com`), the latter being useful for testing multi-tenant systems where the `To` domain is not the same as the hostname of the system.</dd>
+
+  <dt>inf_to</dt>
+  <dd>SIP user / address to send requests to. Takes value provided in variables file. Example: "[field1]". Overrides `to` value</dd>
 
   <dt>transport</dt>
   <dd>Specify the SIP transport. Valid options are `udp` (default) or `tcp`. Default: `udp`</dd>

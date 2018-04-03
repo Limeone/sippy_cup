@@ -103,7 +103,6 @@ module SippyCup
     #
     def initialize(name, args = {}, &block)
       parse_args args
-
       @scenario_options = args.merge name: name
       @filename = args[:filename] || name.downcase.gsub(/\W+/, '_')
       @filename = File.expand_path @filename, Dir.pwd
@@ -152,22 +151,25 @@ module SippyCup
     # @option opts [Integer] :retrans
     # @option opts [String] :headers Extra headers to place into the INVITE
     #
-    def invite(opts = {})
+    def invite(auth=nil, opts = {})
+      auth = auth.join(' ') unless auth.nil? or auth.is_a? String
       opts[:retrans] ||= 500
       # FIXME: The DTMF mapping (101) is hard-coded. It would be better if we could
       # get this from the DTMF payload generator
       from_addr = "#{@from_user}@#{@adv_ip}:[local_port]"
+
       msg = <<-MSG
 
 INVITE sip:#{to_addr} SIP/2.0
 Via: SIP/2.0/[transport] #{@adv_ip}:[local_port];branch=[branch]
-From: "#{@from_user}" <sip:#{from_addr}>;tag=[call_number]
+From: "#{@from_user}" <sip:#{from_addr}>;tag=[pid]SIPpTag00[call_number]
 To: <sip:#{to_addr}>
 Call-ID: [call_id]
 CSeq: [cseq] INVITE
 Contact: <sip:#{from_addr};transport=[transport]>
 Max-Forwards: 100
 User-Agent: #{USER_AGENT}
+#{auth}
 Content-Type: application/sdp
 Content-Length: [len]
 #{opts.has_key?(:headers) ? opts.delete(:headers).sub(/\n*\Z/, "\n") : ''}
@@ -199,6 +201,14 @@ a=fmtp:101 0-15
       end
       # These variables will only be used if we initiate a hangup
       @reference_variables += %w(remote_addr local_addr call_addr)
+    end
+
+    def invite_with_digest_auth(auth, opts = {})
+      invite(nil, opts)
+      receive_100
+      receive_401
+      ack
+      invite(auth, opts.merge(optional: true))
     end
 
     #
@@ -271,7 +281,7 @@ a=fmtp:101 0-15
 SIP/2.0 100 Trying
 [last_Via:]
 From: <sip:[$remote_addr]>;tag=[$remote_tag]
-To: <sip:[$local_addr]>;tag=[call_number]
+To: <sip:[$local_addr]>;tag=[pid]SIPpTag00[call_number]
 [last_Call-ID:]
 [last_CSeq:]
 Server: #{USER_AGENT}
@@ -293,7 +303,7 @@ Content-Length: 0
 SIP/2.0 180 Ringing
 [last_Via:]
 From: <sip:[$remote_addr]>;tag=[$remote_tag]
-To: <sip:[$local_addr]>;tag=[call_number]
+To: <sip:[$local_addr]>;tag=[pid]SIPpTag00[call_number]
 [last_Call-ID:]
 [last_CSeq:]
 Server: #{USER_AGENT}
@@ -316,7 +326,7 @@ Content-Length: 0
 SIP/2.0 200 Ok
 [last_Via:]
 From: <sip:[$remote_addr]>;tag=[$remote_tag]
-To: <sip:[$local_addr]>;tag=[call_number]
+To: <sip:[$local_addr]>;tag=[pid]SIPpTag00[call_number]
 [last_Call-ID:]
 [last_CSeq:]
 Server: #{USER_AGENT}
@@ -411,6 +421,19 @@ a=rtpmap:0 PCMU/8000
       @reference_variables += %w(dummy remote_addr remote_tag)
     end
 
+
+    #
+    # Sets an expectation for a SIP 401 message from the remote party
+    # as well as storing the record set and the response time duration
+    #
+    # @param [Hash] opts A set of options to modify the expectation
+    # @option opts [true, false] :optional Whether or not receipt of the message is optional. Defaults to false.
+    #
+    def receive_unauthorized(opts = {})
+      recv opts.merge(response: 401, auth: true, rrs: true)
+    end
+    alias :receive_401 :receive_unauthorized
+
     #
     # Sets an expectation for a SIP 200 message from the remote party
     #
@@ -443,23 +466,27 @@ a=rtpmap:0 PCMU/8000
     #
     # @param [Hash] opts A set of options to modify the message parameters
     #
-    def ack_answer(opts = {})
+    def ack_answer(should_start_media=true, opts = {})
       msg = <<-BODY
 
 ACK [next_url] SIP/2.0
 Via: SIP/2.0/[transport] #{@adv_ip}:[local_port];branch=[branch]
-From: "#{@from_user}" <sip:#{@from_user}@#{@adv_ip}:[local_port]>;tag=[call_number]
-To: <sip:#{to_addr}>[peer_tag_param]
+From: "#{@from_user}" <sip:#{@from_user}@#{@adv_ip}:[local_port]>;tag=[pid]SIPpTag00[call_number]
+[last_To]
+[routes]
 Call-ID: [call_id]
 CSeq: [cseq] ACK
 Contact: <sip:[$local_addr];transport=[transport]>
 Max-Forwards: 100
 User-Agent: #{USER_AGENT}
 Content-Length: 0
-[routes]
       BODY
       send msg, opts
-      start_media
+      start_media if should_start_media
+    end
+
+    def ack(opts = {})
+      ack_answer(false, opts)
     end
 
     #
@@ -499,7 +526,7 @@ Content-Length: 0
 
 INFO [next_url] SIP/2.0
 Via: SIP/2.0/[transport] #{@adv_ip}:[local_port];branch=[branch]
-From: "#{@from_user}" <sip:#{@from_user}@#{@adv_ip}:[local_port]>;tag=[call_number]
+From: "#{@from_user}" <sip:#{@from_user}@#{@adv_ip}:[local_port]>;tag=[pid]SIPpTag00[call_number]
 To: <sip:#{to_addr}>[peer_tag_param]
 Call-ID: [call_id]
 CSeq: [cseq] INFO
@@ -563,15 +590,16 @@ Duration=#{delay}
 
 BYE sip:[$call_addr] SIP/2.0
 Via: SIP/2.0/[transport] #{@adv_ip}:[local_port];branch=[branch]
-From: <sip:[$local_addr]>;tag=[call_number]
-To: <sip:[$remote_addr]>;tag=[$remote_tag]
+From: <sip:[$local_addr]>;tag=[pid]SIPpTag00[call_number]
+[last_To]
+[routes]
 Contact: <sip:[$local_addr];transport=[transport]>
 Call-ID: [call_id]
 CSeq: [cseq] BYE
 Max-Forwards: 100
 User-Agent: #{USER_AGENT}
 Content-Length: 0
-[routes]
+
       MSG
       send msg, opts
     end
@@ -738,7 +766,7 @@ Content-Length: 0
   private
 
     def to_addr
-      @to_addr ||= "[service]@#{@to_domain}:[remote_port]"
+      @to_addr ||= "#{@to_user}@#{@to_domain}:[remote_port]"
     end
 
     #TODO: SIPS support?
@@ -779,12 +807,13 @@ Content-Length: 0
         @dtmf_mode = :rfc2833
       end
 
-      @from_user = args[:from_user] || "sipp"
+      @from_user = args[:inf_from_user] || args[:from_user] || "sipp"
 
       args[:to] ||= args[:to_user] if args.has_key?(:to_user)
-      if args[:to]
-        @to_user, @to_domain = args[:to].to_s.split('@')
-      end
+
+      to_user = args[:inf_to]|| args[:to] || '[service]'
+
+      @to_user, @to_domain = to_user.to_s.split('@')
       @to_domain ||= "[remote_ip]"
     end
 
@@ -798,7 +827,7 @@ Content-Length: 0
 
 REGISTER sip:#{domain} SIP/2.0
 Via: SIP/2.0/[transport] #{@adv_ip}:[local_port];branch=[branch]
-From: <sip:#{user}@#{domain}>;tag=[call_number]
+From: <sip:#{user}@#{domain}>;tag=[pid]SIPpTag00[call_number]
 To: <sip:#{user}@#{domain}>
 Call-ID: [call_id]
 CSeq: [cseq] REGISTER
@@ -815,7 +844,7 @@ Content-Length: 0
 
 REGISTER sip:#{domain} SIP/2.0
 Via: SIP/2.0/[transport] #{@adv_ip}:[local_port];branch=[branch]
-From: <sip:#{user}@#{domain}>;tag=[call_number]
+From: <sip:#{user}@#{domain}>;tag=[pid]SIPpTag00[call_number]
 To: <sip:#{user}@#{domain}>
 Call-ID: [call_id]
 CSeq: [cseq] REGISTER

@@ -4,6 +4,8 @@
 /spec/reports/
 Gemfile.lock
 .ruby-gemset
+.ruby-version
+.idea/
 tmp/
 /examples/*.xml
 /examples/*.pcap
