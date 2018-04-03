@@ -319,7 +319,14 @@ Content-Length: 0
     #
     # @param [Hash] opts A set of options containing SIPp <send> element attributes
     #
-    def send_answer(opts = {})
+    def send_answer(force_media=true, opts = {})
+      if force_media == 'with_media'
+        should_start_media = true
+      elsif force_media == 'no_media'
+        should_start_media = false
+      else
+        should_start_media = force_media
+      end
       opts[:retrans] ||= DEFAULT_RETRANS
       msg = <<-MSG
 
@@ -343,7 +350,7 @@ t=0 0
 m=audio [media_port] RTP/AVP 0
 a=rtpmap:0 PCMU/8000
       MSG
-      start_media
+      start_media if should_start_media
       send msg, opts
     end
 
@@ -453,12 +460,12 @@ a=rtpmap:0 PCMU/8000
     #
     # @param [Hash] opts A set of options to modify the expectations
     #
-    def wait_for_answer(opts = {})
+    def wait_for_answer(start_media=true, opts = {})
       receive_trying opts
       receive_ringing opts
       receive_progress opts
       receive_answer opts
-      ack_answer opts
+      ack_answer start_media, opts
     end
 
     #
@@ -466,7 +473,17 @@ a=rtpmap:0 PCMU/8000
     #
     # @param [Hash] opts A set of options to modify the message parameters
     #
-    def ack_answer(should_start_media=true, opts = {})
+    def ack_answer(start_media=true, opts = {})
+      # should_start_media = false if should_start_media == 'no_media'
+      # should_start_media = true if should_start_media == 'with_media'
+      if start_media == 'with_media'
+        should_start_media = true
+      elsif start_media == 'no_media'
+        should_start_media = true
+      else
+        should_start_media = start_media
+      end
+
       msg = <<-BODY
 
 ACK [next_url] SIP/2.0
@@ -498,6 +515,38 @@ Content-Length: 0
       milliseconds = (seconds.to_f * MSEC).to_i
       pause milliseconds
       @media << "silence:#{milliseconds}" if @media
+    end
+
+    #
+    # Insert a pause into the scenario and its media of the specified duration
+    #
+    # @param [Numeric] seconds The duration of the pause in seconds
+    #
+    def uniform_distribution_sleep(min, max)
+      min_milliseconds = (min.to_f * MSEC).to_i
+      max_milliseconds = (max.to_f * MSEC).to_i
+      uniform_distribution_pause min_milliseconds, max_milliseconds
+      @media << "silence:#{min_milliseconds}" if @media
+    end
+
+    def normal_distribution_sleep(mean, stdev)
+      mean_milliseconds = (mean.to_f * MSEC).to_i
+      stdev_milliseconds = (stdev.to_f * MSEC).to_i
+      normal_distribution_pause mean_milliseconds, stdev_milliseconds
+      @media << "silence:#{mean_milliseconds}" if @media
+    end
+
+    def lognormal_distribution_sleep(mean, stdev)
+      mean_milliseconds = (mean.to_f * MSEC).to_i
+      stdev_milliseconds = (stdev.to_f * MSEC).to_i
+      lognormal_distribution_pause mean_milliseconds, stdev_milliseconds
+      @media << "silence:#{mean_milliseconds}" if @media
+    end
+
+    def exponential_distribution_sleep(mean)
+      mean_milliseconds = (mean.to_f * MSEC).to_i
+      exponential_distribution_pause mean_milliseconds
+      @media << "silence:#{mean_milliseconds}" if @media
     end
 
     #
@@ -872,6 +921,44 @@ Content-Length: 0
     def pause(msec)
       pause = Nokogiri::XML::Node.new 'pause', doc
       pause['milliseconds'] = msec.to_i
+      scenario_node << pause
+    end
+
+    def fixed_distribution_pause(msec)
+      pause = Nokogiri::XML::Node.new 'pause', doc
+      pause['distribution'] = 'fixed'
+      pause['distribution'] = msec.to_i
+      scenario_node << pause
+    end
+
+    def uniform_distribution_pause(min, max)
+      pause = Nokogiri::XML::Node.new 'pause', doc
+      pause['distribution'] = 'uniform'
+      pause['min'] = min.to_i
+      pause['max'] = max.to_i
+      scenario_node << pause
+    end
+
+    def normal_distribution_pause(mean, stdev)
+      pause = Nokogiri::XML::Node.new 'pause', doc
+      pause['distribution'] = 'normal'
+      pause['mean'] = mean.to_i
+      pause['stdev'] = stdev.to_i
+      scenario_node << pause
+    end
+
+    def lognormal_distribution_pause(mean, stdev)
+      pause = Nokogiri::XML::Node.new 'pause', doc
+      pause['distribution'] = 'lognormal'
+      pause['mean'] = mean.to_i
+      pause['stdev'] = stdev.to_i
+      scenario_node << pause
+    end
+
+    def exponential_distribution_pause(mean)
+      pause = Nokogiri::XML::Node.new 'pause', doc
+      pause['distribution'] = 'exponential'
+      pause['mean'] = mean.to_i
       scenario_node << pause
     end
 
